@@ -1,6 +1,6 @@
 # jsminer
 
-Modified (https://gist.github.com/relayking/7a0c73c8a687f5af18d7e0e814be7bdc)
+Modified (https://gist.github.com/relayking/7a0c73c8a687f5af18d7e0e814be7bdc)  
 Based on 21e8Miner(https://github.com/deanmlittle/21e8miner)
 
 This is a simple miner, take it and expand on it if you wish.
@@ -20,20 +20,20 @@ IE,
 
 # Installation
 
-git clone https://github.com/ivmidable/miner.git
-cd JSMiner
-npm install -g node-gyp (if you don't have it installed already)
-npm install
-cd node_modules/secp256k1
-node-gyp configure
-node-gyp build
-cd ../..
+git clone https://github.com/ivmidable/miner.git  
+cd JSMiner  
+npm install -g node-gyp (if you don't have it installed already)  
+npm install  
+cd node_modules/secp256k1  
+node-gyp configure  
+node-gyp build  
+cd ../..  
 
 # Creating Config
-node setup.js
+node setup.js  
 
-BACKUP your MinerID private key, the corrisponding public key you sign with will be used
-to receive Putr if you mine the correct hashes.
+BACKUP your MinerID private key, the corrisponding public key you sign with will be used  
+to receive Putr if you mine the correct hashes.  
 
 # Running Miner
 node manager.js
