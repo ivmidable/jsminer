@@ -21,7 +21,7 @@ IE,
 # Installation
 
 git clone https://github.com/ivmidable/jsminer.git  
-cd jsMiner  
+cd jsminer  
 npm install -g node-gyp (if you don't have it installed already)  
 npm install  
 cd node_modules/secp256k1  
