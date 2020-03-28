@@ -56,13 +56,8 @@ var lastEventId = undefined;
         } catch (e) {
             console.log("\nfailed to fetch mined, retrying..");
         }
-        try {
-        await filterLocalMined();
-        } catch(e) {
-            console.log(e);
-            setTimeout(tick, config.poll)
-            return;
-        }
+        filterLocalMined();
+
         printDashboard();
 
         sortUnmined();
@@ -188,18 +183,19 @@ async function filterMarketMined() {
     }
 }
 
-async function filterLocalMined() {
+function filterLocalMined() {
+    let unminedCopy = [...unmined];
     let temp = [];
     let found = false;
-    for (let i = 0; i < unmined.length; i++) {
+    for (let i = 0; i < unminedCopy.length; i++) {
         for (let j = 0; j < mined.length; j++) {
-            if (unmined[i].txid === mined[j].txid && unmined[i].out.i === mined[j].vout) {
+            if (unminedCopy[i].txid === mined[j].txid && unminedCopy[i].out.i === mined[j].vout) {
                 found = true;
                 break;
             }
         }
         if (found === false) {
-            temp.push(unmined[i]);
+            temp.push(unminedCopy[i]);
         }
         found = false;
     }
@@ -410,7 +406,7 @@ async function startMining(from, to) {
     if (config.minerId.enabled && config.minerId.minValue < value) {
         const schema = {
             id: minerPub,
-            sig: bsv.crypto.ECDSA.sign(Buffer.from(from.txid, 'hex'), minerPriv),
+            sig: bsv.crypto.ECDSA.sign(Buffer.from(from.txid, 'hex'), minerPriv).toString('hex'),
             message: config.minerId.message
         };
         tx.addOutput(new Transaction.Output({
