@@ -19,22 +19,27 @@ IE,
 
 
 # Installation
-
-git clone https://github.com/ivmidable/jsminer.git  
-cd jsminer  
-npm install -g node-gyp (if you don't have it installed already)  
-npm install  
-cd node_modules/secp256k1  
-node-gyp configure  
-node-gyp build  
-cd ../..  
+```
+git clone https://github.com/ivmidable/miner.git
+cd JSMiner
+npm install -g node-gyp (if you don't have it installed already)
+npm install
+cd node_modules/secp256k1
+node-gyp configure
+node-gyp build
+cd ../..
+```
 
 # Creating Config
-node setup.js  
+```
+node setup.js
+```
 
 BACKUP your MinerID private key, the corrisponding public key you sign with will be used  
 to receive Putr if you mine the correct hashes.  
 
 # Running Miner
+```
 node manager.js
+```
  
