@@ -184,18 +184,20 @@ async function filterMarketMined() {
 }
 
 function filterLocalMined() {
-    let unminedCopy = [...unmined];
     let temp = [];
     let found = false;
-    for (let i = 0; i < unminedCopy.length; i++) {
+    for (let i = 0; i < unmined.length; i++) {
         for (let j = 0; j < mined.length; j++) {
-            if (unminedCopy[i].txid === mined[j].txid && unminedCopy[i].out.i === mined[j].vout) {
+            if(unmined[i] === undefined || mined[j] === undefined) {
+                return;
+            }
+            if (unmined[i].txid === mined[j].txid && unmined[i].out.i === mined[j].vout) {
                 found = true;
                 break;
             }
         }
         if (found === false) {
-            temp.push(unminedCopy[i]);
+            temp.push(unmined[i]);
         }
         found = false;
     }
@@ -270,7 +272,11 @@ function printDashboard() {
 
 async function getAddressFromPaymail(paymail) {
     try {
+         
         const polynym = await axios.get(`https://api.polynym.io/getAddress/${paymail}`);
+        if(config.fallback !== undefined && config.fallback.length === 0) {
+            config.fallback = polynym.data.address;
+        }
         console.log(`\n${polynym.data.address}`);
         return polynym.data.address;
     } catch (e) {
