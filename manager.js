@@ -16,12 +16,10 @@ const minerPub = new bsv.PublicKey.fromPrivateKey(minerPriv).toString('hex');
 
 //Variables
 var bsvusd = 0;
-var unmined = [];
-var mined = [];
-var incoming = [];
-var incoming_synced = 0;
+var work = new Map();
 var workers = new Map();
 var worker_hashrate = new Map();
+var working = false;
 var st = undefined;
 var txn = undefined;
 var utxo = undefined;
@@ -31,53 +29,51 @@ var lastEventId = undefined;
 
 //Main
 (async () => {
-    if(config.maxDiff === 0)
+    if (config.maxDiff === 0)
         config.maxDiff = 10000;
     address = await getAddressFromPaymail(config.payto);
     launchWorkers();
     let bs = new Date().getTime();
     connectToBitsocket();
 
-    //sometimes pow.market is down, if you KNOW the hash is mined you can blacklist it.
-    //mined.push({txid:"874dadad92909573c328b3db6730342899414958b12ac1e132a7c2b4b975c90b", vout:3});
-
     setTimeout(async function tick() {
         if (new Date().getTime() - bs > 300000) {
             sock.close();
-            if (incoming_synced === incoming.length) {
-                incoming = [];
-                incoming_synced = 0;
-            }
             await connectToBitsocket();
+            bs = new Date().getTime();
         }
-        syncIncomingUnmined();
-        try {
-            await filterMarketMined();
-        } catch (e) {
-            console.log("\nfailed to fetch mined, retrying..");
+
+        if (working === true) {
+            try {
+                await checkMarketMined();
+            } catch (e) {
+                console.log("\nfailed to fetch mined, retrying..");
+            }
+        } else {
+            const { data } = await axios.get("https://api.whatsonchain.com/v1/bsv/main/exchangerate");
+            bsvusd = Number(data.rate).toFixed(2);
         }
-        filterLocalMined();
 
         printDashboard();
 
-        sortUnmined();
+        let sorted = sortWork();
 
         if (utxo !== undefined && checkIfMined(utxo) === true) {
-            console.log("\nno longer unmined. killing signers.");
+            console.log(chalk.yellowBright("\nno longer unmined. killing workers."));
             killWorkers();
             launchWorkers();
             address = await getAddressFromPaymail(config.payto);
         }
 
-        if (unmined.length === 0) {
+        if (work.size === 0) {
             setTimeout(tick, config.poll);
             return;
         }
 
-        await mineSorted();
+        await mineSorted(sorted[0][1]);
 
         setTimeout(tick, config.poll);
-    }, config.poll);
+    }, 0);
 })();
 
 //Functions
@@ -118,131 +114,71 @@ async function connectToBitsocket() {
                 for (let j = 0; j < obj.data[i].out.length; j++) {
                     if (is21e8Out(obj.data[i].out[j])) {
                         if (obj.data[i].out[j].h1.length <= config.maxDiff) {
-                            incoming.push({ txid: obj.data[i].tx.h, out: obj.data[i].out[j] });
+                            work.set(`${obj.data[i].tx.h}.out.${obj.data[i].out[j].i}`, { txid: obj.data[i].tx.h, i: obj.data[i].out[j].i, h: obj.data[i].out[j].h0, t: obj.data[i].out[j].h1, v: obj.data[i].out[j].e.v });
                         }
                     }
                 }
             }
         }
-        if (incoming.length !== 0 && unmined.length === 0) {
-            unmined = [...incoming];
-            sortUnmined();
+
+        if (work.size === 1) {
+            let top = { ...work.values().next().value };
             (async () => {
-                await mineSorted();
+                await mineSorted(top);
             })()
         }
     }
 }
 
-function syncIncomingUnmined() {
-    let found = false;
-    let temp = [...incoming];
-    /*if(temp.length === 0) {
-        incoming_synced = 0;
-    } else {*/
-    let i = 0;
-    for (i = incoming_synced; i < temp.length; i++) {
-        for (let j = 0; j < unmined.length; j++) {
-            if (temp[i].txid === unmined[j].txid && temp[i].out.i === unmined[j].out.i) {
-                found = true;
-                break;
-            }
-        }
-        if (found === false) {
-            unmined.push(temp[i]);
-        }
-        found = false;
-    }
-    incoming_synced = i;
-    //}
-}
-
-async function filterMarketMined() {
-    let out = [];
-    let found = false;
+//test if we can reliable delte from work.
+async function checkMarketMined() {
     try {
-        const { data } = await axios.get('https://pow.market/api/mined');
+        const { data } = await axios.get("https://pow.market/api/mined");
         bsvusd = data.bsvusd;
-        for (let i = 0; i < unmined.length; i++) {
-            for (let j = 0; j < data.magicnumbers.length; j++) {
-                if (unmined[i].txid === data.magicnumbers[j].txid) {
-                    if (unmined[i].out.i === data.magicnumbers[j].vout) {
-                        found = true;
-                        break;
-                    }
-                }
-            }
-            if (found === false) {
-                out.push(unmined[i]);
-            }
-            found = false;
+        for (let magic of data.magicnumbers) {
+            work.delete(`${magic.txid}.out.${magic.vout}`);
         }
-        unmined = out;
     } catch (e) {
         console.log(e);
     }
 }
 
-function filterLocalMined() {
-    let temp = [];
-    let found = false;
-    for (let i = 0; i < unmined.length; i++) {
-        for (let j = 0; j < mined.length; j++) {
-            if(unmined[i] === undefined || mined[j] === undefined) {
-                return;
-            }
-            if (unmined[i].txid === mined[j].txid && unmined[i].out.i === mined[j].vout) {
-                found = true;
-                break;
-            }
-        }
-        if (found === false) {
-            temp.push(unmined[i]);
-        }
-        found = false;
-    }
-    unmined = temp;
-}
-
 function checkIfMined(utxo) {
-    for (let i = 0; i < unmined.length; i++) {
-        if (utxo.txid === unmined[i].txid && utxo.vout === unmined[i].out.i)
-            return false;
-    }
-    return true;
+    return !work.has(`${utxo.txid}.out.${utxo.vout}`);
 }
 
 //sort based on easiest to mine with highest reward
-function sortUnmined() {
-    unmined.sort((a, b) => {
-        if (a.out.h1.length - b.out.h1.length <= 0) {
-            if (Number(a.out.e.v) > Number(b.out.e.v)) {
+function sortWork() {
+    return [...work].sort((a, b) => {
+        if (a[1].t.length - b[1].t.length <= 0) {
+            if (Number(a[1].v) > Number(b[1].v)) {
                 return -1;
             }
-            if (a.out.h1.length < b.out.h1.length) {
+            if (a[1].t.length < b[1].t.length) {
                 return -1;
             }
-            if (Number(a.out.e.v) < Number(b.out.e.v)) {
+            if (Number(a[1].v) < Number(b[1].v)) {
                 return 1;
             }
         }
-        if (a.out.h1.length > b.out.h1.length) {
+        if (a[1].t.length > b[1].t.length) {
             return 1;
         }
         return 0;
     });
 }
 
-async function mineSorted() {
-    if (utxo !== undefined && (utxo.txid !== unmined[0].txid || utxo.vout !== unmined[0].out.i)) {
-        console.log("\nno longer the top choice to mine. killing workers.");
+async function mineSorted(top) {
+    if (utxo !== undefined && utxo.txid !== top.txid && utxo.vout !== top.i) {
+        console.log(chalk.yellowBright("\nno longer the top choice to mine. killing workers."));
         killWorkers();
         launchWorkers();
-        utxo = { txid: unmined[0].txid, vout: unmined[0].out.i };
+        utxo = { txid: top.txid, vout: top.i };
         address = await getAddressFromPaymail(config.payto);
         st = new Date().getTime();
         try {
-            await startMining(unmined[0], address);
+            await startMining(top, address);
+            working = true;
         } catch (_) {
 
         }
@@ -250,10 +186,11 @@ async function mineSorted() {
     }
 
     if (utxo === undefined) {
-        utxo = { txid: unmined[0].txid, vout: unmined[0].out.i };
+        utxo = { txid: top.txid, vout: top.i };
         st = new Date().getTime();
         try {
-            await startMining(unmined[0], address);
+            await startMining(top, address);
+            working = true;
         } catch (_) {
 
         }
@@ -267,14 +204,13 @@ function printDashboard() {
     }
     process.stdout.clearLine();
     process.stdout.cursorTo(0);
-    process.stdout.write(chalk.blue(`hash/s:${(combined / (+ new Date() - st) * 1000).toFixed(0)} bsvusd:${bsvusd} unmined:${unmined.length}`));
+    process.stdout.write(chalk.blue(`hash/s:${(combined / (+ new Date() - st) * 1000).toFixed(0)} bsvusd:${bsvusd} unmined:${work.size}`));
 }
 
 async function getAddressFromPaymail(paymail) {
     try {
-         
         const polynym = await axios.get(`https://api.polynym.io/getAddress/${paymail}`);
-        if(config.fallback !== undefined && config.fallback.length === 0) {
+        if (config.fallback !== undefined && config.fallback.length === 0) {
             config.fallback = polynym.data.address;
         }
         console.log(`\n${polynym.data.address}`);
@@ -313,10 +249,12 @@ function launchWorkers() {
                     worker_hashrate.set(f.pid, m.data);
                     break;
                 case 'success':
-                    console.log(`\nSucceded in solving the hash.`);
+                    console.log(chalk.yellowBright(`\nSucceded in solving the hash. killing workers`));
                     await publish(m.data.sig, m.data.priv_key);
-                    mined.push(utxo);
-                    utxo = undefined;
+                    if (utxo !== undefined) {
+                        work.delete(`${utxo.txid}.out.${utxo.vout}`);
+                        utxo = undefined;
+                    }
                     killWorkers();
                     launchWorkers();
                     address = await getAddressFromPaymail(config.payto);
@@ -345,6 +283,7 @@ function killWorkers() {
     workers.clear();
     worker_hashrate.clear();
     utxo = undefined;
+    working = false;
 }
 
 async function publish(sig, priv_key) {
@@ -370,8 +309,6 @@ async function publish(sig, priv_key) {
         } catch (e) {
             console.log(chalk.red(e));
         }
-    } else {
-        return;
     }
 }
 
@@ -381,12 +318,12 @@ async function startMining(from, to) {
     } catch (e) {
         throw ("Invalid address");
     }
-    console.log(chalk.green(`\nMining TX ${utxo.txid} output ${utxo.vout}`));
+    console.log(chalk.green(`\nMining TX ${from.txid} output ${from.i}`));
     console.log(chalk.green(`Pay to: ${to}`));
-    let script = `${from.out.h0} ${from.out.h1} OP_SIZE OP_4 OP_PICK OP_SHA256 OP_SWAP OP_SPLIT OP_DROP OP_EQUALVERIFY OP_DROP OP_CHECKSIG`;
-    const value = from.out.e.v;
+    let script = `${from.h} ${from.t} OP_SIZE OP_4 OP_PICK OP_SHA256 OP_SWAP OP_SPLIT OP_DROP OP_EQUALVERIFY OP_DROP OP_CHECKSIG`;
+    const value = from.v;
     const targetScript = bsv.Script.fromASM(script);
-    let target = from.out.h1;
+    let target = from.t;
 
     //Make initial TX
     let tx = new Transaction();
@@ -397,7 +334,7 @@ async function startMining(from, to) {
                 satoshis: value
             }),
             prevTxId: from.txid,
-            outputIndex: from.out.i,
+            outputIndex: from.i,
             script: bsv.Script.empty()
         })
     );
