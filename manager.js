@@ -50,8 +50,12 @@ var lastEventId = undefined;
                 console.log("\nfailed to fetch mined, retrying..");
             }
         } else {
+            try {
             const { data } = await axios.get("https://api.whatsonchain.com/v1/bsv/main/exchangerate");
             bsvusd = Number(data.rate).toFixed(2);
+            } catch(_) {
+                console.log(chalk.red("Failed to update price...retrying"));
+            }
         }
 
         printDashboard();
@@ -150,7 +154,7 @@ function checkIfMined(utxo) {
 //sort based on easiest to mine with highest reward
 function sortWork() {
     return [...work].sort((a, b) => {
-        if (a[1].t.length - b[1].t.length <= 0) {
+        if (a[1].t.length - b[1].t.length < 0) {
             if (Number(a[1].v) > Number(b[1].v)) {
                 return -1;
             }
